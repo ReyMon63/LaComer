@@ -38,6 +38,8 @@ body {
   background: radial-gradient(circle at 50% -10%, var(--accent-soft), var(--bg) 55%);
 }
 
+.login-screen[hidden] { display: none; }
+
 .login-card {
   width: 100%;
   max-width: 380px;
@@ -223,6 +225,8 @@ body {
   max-height: 260px;
   overflow-y: auto;
 }
+
+.search-results[hidden] { display: none; }
 
 .result-item {
   text-align: left;
@@ -423,6 +427,8 @@ body {
   padding: 20px;
   z-index: 20;
 }
+
+.modal[hidden] { display: none; }
 
 .modal-card {
   background: #fff;
