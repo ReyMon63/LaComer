@@ -1,6 +1,10 @@
 /**
  * app.js — Lógica del Preciador GE
  * Depende de data.js (CATALOGO, INSTALACION, ACCESS_CODES).
+ *
+ * Dos flujos de cotización, comparten la misma tarjeta de Resultado:
+ *   Flujo A "Cotizar por Artículo": buscas el artículo -> precio -> duración -> instalación (si aplica)
+ *   Flujo B "Cotizar por Precio":   escribes el precio -> subcategoría -> duración -> instalación (si aplica)
  */
 
 (function () {
@@ -30,7 +34,15 @@
     });
   };
 
-  // Índice plano de artículos elegibles para el buscador dinámico
+  const sortOpciones = (opciones) =>
+    [...opciones].sort((a, b) => {
+      if (b.years !== a.years) return b.years - a.years;
+      return b.pct - a.pct;
+    });
+
+  const excedeLimite = (precio) => precio > MAX_PRECIO;
+
+  // Índice plano de artículos elegibles para el buscador dinámico (Flujo A)
   function buildSearchIndex() {
     const index = [];
     CATALOGO.forEach((cat) => {
@@ -40,19 +52,35 @@
     });
     return index;
   }
-
   const SEARCH_INDEX = buildSearchIndex();
+
+  // ¿Esta subcategoría tiene algún artículo elegible para instalación?
+  // (se usa en el Flujo B, donde no se conoce el artículo exacto)
+  CATALOGO.forEach((cat) => {
+    cat.aplicaInstalacion = cat.articulos.some((art) =>
+      matchesAny(art, INSTALACION.articulos)
+    );
+  });
 
   // ------------------------------------------------------------------
   // Estado
   // ------------------------------------------------------------------
-  let state = {
-    categoria: null, // objeto de CATALOGO seleccionado
-    articulo: null, // texto del artículo elegido
-    opcion: null, // opción de duración seleccionada
-    precio: 0,
+  let activeFlow = null; // 'articulo' | 'precio' | null
+
+  let stateA = {
+    categoria: null,
+    articulo: null,
+    opcion: null,
     instalacion: false,
     aplicaInstalacion: false,
+  };
+
+  let stateB = {
+    categoria: null,
+    opcion: null,
+    instalacion: false,
+    aplicaInstalacion: false,
+    step: 0, // 0=precio, 1=subcategoria, 2=duracion, 3=instalacion/resultado
   };
 
   // ------------------------------------------------------------------
@@ -66,6 +94,10 @@
   const accessCodeInput = $("accessCode");
   const loginError = $("loginError");
 
+  const backBtn = $("backBtn");
+
+  // Flujo A
+  const searchCard = $("searchCard");
   const searchInput = $("searchInput");
   const searchResults = $("searchResults");
   const searchEmpty = $("searchEmpty");
@@ -82,6 +114,19 @@
   const installWrap = $("installWrap");
   const installCheck = $("installCheck");
 
+  // Flujo B
+  const priceModeCard = $("priceModeCard");
+  const priceModeInput = $("priceModeInput");
+  const priceModeLimitMsg = $("priceModeLimitMsg");
+
+  const flowBWrap = $("flowBWrap");
+  const subcatGrid = $("subcatGrid");
+  const durStepB = $("durStepB");
+  const optionsGridB = $("optionsGridB");
+  const installWrapB = $("installWrapB");
+  const installCheckB = $("installCheckB");
+
+  // Resultado (compartido)
   const resultWrap = $("resultWrap");
   const resGEMonto = $("resGEMonto");
   const resGEDetalle = $("resGEDetalle");
@@ -136,8 +181,44 @@
   });
 
   // ------------------------------------------------------------------
-  // Buscador dinámico
+  // Botón Regresar (esquina superior derecha)
   // ------------------------------------------------------------------
+  function updateBackButton() {
+    backBtn.hidden = activeFlow === null;
+  }
+
+  backBtn.addEventListener("click", () => {
+    if (activeFlow === "articulo") {
+      resetTodo();
+    } else if (activeFlow === "precio") {
+      if (stateB.step >= 3) {
+        collapseFlowBTo(2);
+      } else if (stateB.step === 2) {
+        collapseFlowBTo(1);
+      } else if (stateB.step === 1) {
+        collapseFlowBTo(0);
+      } else {
+        resetTodo();
+      }
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // Reinicio general (ambos flujos)
+  // ------------------------------------------------------------------
+  function resetTodo() {
+    resetFlowA();
+    resetFlowB();
+    activeFlow = null;
+    updateBackButton();
+    searchInput.focus();
+  }
+
+  resetBtn.addEventListener("click", resetTodo);
+
+  // ====================================================================
+  // FLUJO A — Cotizar por Artículo
+  // ====================================================================
   searchInput.addEventListener("input", () => {
     const q = searchInput.value.trim();
     if (q.length < 2) {
@@ -145,6 +226,10 @@
       searchEmpty.hidden = true;
       return;
     }
+
+    activeFlow = "articulo";
+    resetFlowB();
+    updateBackButton();
 
     const nq = normalize(q);
     const matches = SEARCH_INDEX.filter((entry) =>
@@ -175,10 +260,14 @@
   });
 
   function selectArticulo(entry) {
-    state.categoria = entry.categoria;
-    state.articulo = entry.articulo;
-    state.opcion = null;
-    state.instalacion = false;
+    activeFlow = "articulo";
+    resetFlowB();
+    updateBackButton();
+
+    stateA.categoria = entry.categoria;
+    stateA.articulo = entry.articulo;
+    stateA.opcion = null;
+    stateA.instalacion = false;
 
     selectedCat.textContent = entry.categoria.subNombre;
     selectedName.textContent = entry.articulo;
@@ -188,103 +277,54 @@
     searchResults.hidden = true;
     searchEmpty.hidden = true;
 
-    // ¿Aplica instalación para este artículo?
-    state.aplicaInstalacion = matchesAny(entry.articulo, INSTALACION.articulos);
-    installWrap.hidden = !state.aplicaInstalacion;
+    stateA.aplicaInstalacion = matchesAny(entry.articulo, INSTALACION.articulos);
+    installWrap.hidden = !stateA.aplicaInstalacion;
     installCheck.checked = false;
 
     priceLimitMsg.hidden = true;
-    renderOptions();
+    renderOptions(stateA.categoria, optionsGrid, (op) => {
+      stateA.opcion = op;
+      calcularYMostrarA();
+    });
+    stateA.opcion = sortOpciones(stateA.categoria.opciones)[0];
+
     resultWrap.hidden = true;
     priceInput.value = "";
     priceInput.focus();
   }
 
-  clearSelection.addEventListener("click", resetAll);
+  clearSelection.addEventListener("click", resetTodo);
 
-  function resetAll() {
-    state = {
+  function resetFlowA() {
+    stateA = {
       categoria: null,
       articulo: null,
       opcion: null,
-      precio: 0,
       instalacion: false,
       aplicaInstalacion: false,
     };
     selectedWrap.hidden = true;
     optionsWrap.hidden = true;
     installWrap.hidden = true;
-    resultWrap.hidden = true;
     priceLimitMsg.hidden = true;
     searchInput.value = "";
     priceInput.value = "";
-    searchInput.focus();
+    searchResults.hidden = true;
+    searchEmpty.hidden = true;
+    if (activeFlow === "articulo") resultWrap.hidden = true;
   }
 
-  resetBtn.addEventListener("click", resetAll);
-
-  // ------------------------------------------------------------------
-  // Opciones de duración (la más alta primero, destacada)
-  // ------------------------------------------------------------------
-  function renderOptions() {
-    if (!state.categoria) return;
-
-    const opciones = [...state.categoria.opciones].sort((a, b) => {
-      if (b.years !== a.years) return b.years - a.years;
-      return b.pct - a.pct;
-    });
-
-    optionsGrid.innerHTML = "";
-    optionsWrap.hidden = false;
-
-    opciones.forEach((op, idx) => {
-      const card = document.createElement("button");
-      card.type = "button";
-      card.className = "option-card" + (idx === 0 ? " featured" : "");
-      card.innerHTML = `
-        <div class="years">${op.years} año${op.years > 1 ? "s" : ""}</div>
-        <div class="tipo">${op.tipo}</div>
-        <div class="monto" data-monto>—</div>
-        <div class="pct">${(op.pct * 100).toFixed(2)}%</div>
-      `;
-      card.addEventListener("click", () => {
-        state.opcion = op;
-        [...optionsGrid.children].forEach((c) => c.classList.remove("selected"));
-        card.classList.add("selected");
-        calcularYMostrar();
-      });
-      optionsGrid.appendChild(card);
-    });
-
-    // Selecciona automáticamente la opción destacada (mayor duración)
-    if (opciones.length) {
-      state.opcion = opciones[0];
-      optionsGrid.children[0].classList.add("selected");
-    }
-
-    actualizarMontosOpciones();
-  }
-
-  function actualizarMontosOpciones() {
-    const precio = parseFloat(priceInput.value) || 0;
-    const opciones = [...state.categoria.opciones].sort((a, b) => {
-      if (b.years !== a.years) return b.years - a.years;
-      return b.pct - a.pct;
-    });
-    [...optionsGrid.children].forEach((card, idx) => {
+  function actualizarMontosOpciones(categoria, grid, precio) {
+    const opciones = sortOpciones(categoria.opciones);
+    [...grid.children].forEach((card, idx) => {
       const op = opciones[idx];
       const montoEl = card.querySelector("[data-monto]");
       montoEl.textContent = precio > 0 ? money(precio * op.pct) : "—";
     });
   }
 
-  function excedeLimite(precio) {
-    return precio > MAX_PRECIO;
-  }
-
-  function aplicarLimitePrecio(precio) {
+  function aplicarLimitePrecioA(precio) {
     const overLimit = excedeLimite(precio);
-
     if (overLimit) {
       priceLimitMsg.hidden = false;
       optionsWrap.hidden = true;
@@ -292,51 +332,228 @@
       resultWrap.hidden = true;
     } else {
       priceLimitMsg.hidden = true;
-      if (state.categoria) {
+      if (stateA.categoria) {
         optionsWrap.hidden = false;
-        installWrap.hidden = !state.aplicaInstalacion;
+        installWrap.hidden = !stateA.aplicaInstalacion;
       }
     }
-
     return overLimit;
   }
 
   priceInput.addEventListener("input", () => {
-    // Campo inteligente: solo dígitos y un punto decimal
     priceInput.value = priceInput.value.replace(/[^0-9.]/g, "");
     const precio = parseFloat(priceInput.value) || 0;
 
-    if (aplicarLimitePrecio(precio)) return;
+    if (aplicarLimitePrecioA(precio)) return;
 
-    actualizarMontosOpciones();
-    if (state.opcion) calcularYMostrar();
+    if (stateA.categoria) actualizarMontosOpciones(stateA.categoria, optionsGrid, precio);
+    if (stateA.opcion) calcularYMostrarA();
   });
 
   installCheck.addEventListener("change", () => {
-    state.instalacion = installCheck.checked;
-    if (state.opcion) calcularYMostrar();
+    stateA.instalacion = installCheck.checked;
+    if (stateA.opcion) calcularYMostrarA();
   });
 
-  // ------------------------------------------------------------------
-  // Cálculo y resultado
-  // ------------------------------------------------------------------
-  function calcularYMostrar() {
+  function calcularYMostrarA() {
     const precio = parseFloat(priceInput.value) || 0;
-    if (!state.opcion || precio <= 0 || excedeLimite(precio)) {
+    if (!stateA.opcion || precio <= 0 || excedeLimite(precio)) {
       resultWrap.hidden = true;
       return;
     }
+    mostrarResultado({
+      detalle: stateA.articulo,
+      opcion: stateA.opcion,
+      precio,
+      instalacionOn: stateA.instalacion,
+    });
+  }
 
-    const montoGE = precio * state.opcion.pct;
+  // ====================================================================
+  // FLUJO B — Cotizar por Precio
+  // ====================================================================
+  function aplicarLimitePrecioB(precio) {
+    const overLimit = excedeLimite(precio);
+    if (overLimit) {
+      priceModeLimitMsg.hidden = false;
+      flowBWrap.hidden = true;
+      resultWrap.hidden = true;
+    } else {
+      priceModeLimitMsg.hidden = true;
+    }
+    return overLimit;
+  }
+
+  priceModeInput.addEventListener("input", () => {
+    priceModeInput.value = priceModeInput.value.replace(/[^0-9.]/g, "");
+    const precio = parseFloat(priceModeInput.value) || 0;
+
+    if (aplicarLimitePrecioB(precio)) return;
+
+    // Solo se construye la lista de subcategorías la primera vez que hay
+    // un precio válido; si el vendedor ya avanzó (subcategoría/duración
+    // elegidas) y solo ajusta el precio, no se reconstruye ni se pierde
+    // la selección visual ya hecha.
+    if (precio > 0 && stateB.step === 0) {
+      activeFlow = "precio";
+      resetFlowA();
+      updateBackButton();
+      mostrarSubcategorias();
+      stateB.step = 1;
+    }
+
+    // Recalcula montos visibles con el precio actual
+    if (stateB.categoria) actualizarMontosOpciones(stateB.categoria, optionsGridB, precio);
+    if (stateB.opcion) calcularYMostrarB();
+  });
+
+  function mostrarSubcategorias() {
+    flowBWrap.hidden = false;
+    subcatGrid.innerHTML = "";
+
+    CATALOGO.forEach((cat) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "subcat-item";
+      const resumen = cat.opciones
+        .map((o) => (o.tipo === "Garantía" ? `${o.years} año${o.years > 1 ? "s" : ""}` : o.tipo))
+        .join(" / ");
+      btn.innerHTML = `
+        <span class="name">${cat.subNombre}</span>
+        <span class="opts">${resumen}</span>
+      `;
+      btn.addEventListener("click", () => selectSubcategoria(cat, btn));
+      subcatGrid.appendChild(btn);
+    });
+  }
+
+  function selectSubcategoria(categoria, btnEl) {
+    stateB.categoria = categoria;
+    stateB.opcion = null;
+    stateB.instalacion = false;
+    stateB.aplicaInstalacion = !!categoria.aplicaInstalacion;
+    stateB.step = 2;
+
+    [...subcatGrid.children].forEach((c) => c.classList.remove("selected"));
+    btnEl.classList.add("selected");
+
+    installCheckB.checked = false;
+    installWrapB.hidden = !stateB.aplicaInstalacion;
+    resultWrap.hidden = true;
+
+    const precio = parseFloat(priceModeInput.value) || 0;
+
+    renderOptions(categoria, optionsGridB, (op) => {
+      stateB.opcion = op;
+      stateB.step = 3;
+      calcularYMostrarB();
+    });
+    stateB.opcion = sortOpciones(categoria.opciones)[0];
+    durStepB.hidden = false;
+    actualizarMontosOpciones(categoria, optionsGridB, precio);
+
+    if (precio > 0) calcularYMostrarB();
+  }
+
+  installCheckB.addEventListener("change", () => {
+    stateB.instalacion = installCheckB.checked;
+    if (stateB.opcion) calcularYMostrarB();
+  });
+
+  function calcularYMostrarB() {
+    const precio = parseFloat(priceModeInput.value) || 0;
+    if (!stateB.opcion || precio <= 0 || excedeLimite(precio)) {
+      resultWrap.hidden = true;
+      return;
+    }
+    // El resultado ya está visible (aunque sea con la opción destacada
+    // preseleccionada, sin que el vendedor haya tocado una tarjeta): el
+    // contador de pasos debe reflejarlo para que "Regresar" retroceda
+    // de forma consistente.
+    stateB.step = 3;
+    mostrarResultado({
+      detalle: `Cotización por precio · ${stateB.categoria.subNombre}`,
+      opcion: stateB.opcion,
+      precio,
+      instalacionOn: stateB.instalacion,
+    });
+  }
+
+  function collapseFlowBTo(step) {
+    stateB.step = step;
+    if (step < 3) resultWrap.hidden = true;
+    if (step < 2) {
+      durStepB.hidden = true;
+      installWrapB.hidden = true;
+      stateB.opcion = null;
+    }
+    if (step < 1) {
+      flowBWrap.hidden = true;
+      stateB.categoria = null;
+      priceModeInput.value = "";
+      priceModeLimitMsg.hidden = true;
+    }
+    if (step >= 1) {
+      [...subcatGrid.children].forEach((c) => c.classList.remove("selected"));
+    }
+  }
+
+  function resetFlowB() {
+    stateB = {
+      categoria: null,
+      opcion: null,
+      instalacion: false,
+      aplicaInstalacion: false,
+      step: 0,
+    };
+    flowBWrap.hidden = true;
+    durStepB.hidden = true;
+    installWrapB.hidden = true;
+    priceModeInput.value = "";
+    priceModeLimitMsg.hidden = true;
+    if (activeFlow === "precio") resultWrap.hidden = true;
+  }
+
+  // ====================================================================
+  // Componentes compartidos
+  // ====================================================================
+
+  // Tarjetas de duración: la de mayor duración primero, destacada y preseleccionada.
+  function renderOptions(categoria, grid, onSelect) {
+    const opciones = sortOpciones(categoria.opciones);
+    grid.innerHTML = "";
+
+    opciones.forEach((op, idx) => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "option-card" + (idx === 0 ? " featured selected" : "");
+      card.innerHTML = `
+        <div class="years">${op.years} año${op.years > 1 ? "s" : ""}</div>
+        <div class="tipo">${op.tipo}</div>
+        <div class="monto" data-monto>—</div>
+        <div class="pct">${(op.pct * 100).toFixed(2)}%</div>
+      `;
+      card.addEventListener("click", () => {
+        [...grid.children].forEach((c) => c.classList.remove("selected"));
+        card.classList.add("selected");
+        onSelect(op);
+      });
+      grid.appendChild(card);
+    });
+  }
+
+  // Resultado final: monto, detalle, SKU + código de barras, e instalación si aplica.
+  function mostrarResultado({ detalle, opcion, precio, instalacionOn }) {
+    const montoGE = precio * opcion.pct;
 
     resGEMonto.textContent = money(montoGE);
-    resGEDetalle.textContent = `${state.articulo} · ${state.opcion.years} año${state.opcion.years > 1 ? "s" : ""} (${state.opcion.tipo}) · ${(state.opcion.pct * 100).toFixed(2)}% sobre ${money(precio)}`;
-    skuGELabel.textContent = `SKU ${state.opcion.sku}`;
-    dibujarBarcode("barcodeGE", state.opcion.sku);
+    resGEDetalle.textContent = `${detalle} · ${opcion.years} año${opcion.years > 1 ? "s" : ""} (${opcion.tipo}) · ${(opcion.pct * 100).toFixed(2)}% sobre ${money(precio)}`;
+    skuGELabel.textContent = `SKU ${opcion.sku}`;
+    dibujarBarcode("barcodeGE", opcion.sku);
 
     let total = montoGE;
 
-    if (state.instalacion) {
+    if (instalacionOn) {
       resultInstallBlock.hidden = false;
       resInstallMonto.textContent = money(INSTALACION.monto);
       skuInstallLabel.textContent = `SKU ${INSTALACION.sku}`;

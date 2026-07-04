@@ -32,6 +32,13 @@ const ACCESS_CODES = ["reymon"];
 
 Cuando me compartas la tabla real de claves (por vendedor, por ejemplo), la cambiamos por un arreglo/objeto con esa tabla — es un cambio contenido solo en `data.js`.
 
+## Dos formas de cotizar
+
+- **Cotizar por Artículo** (la original): escribes el nombre del artículo, la app te dice si es elegible y de qué subcategoría, y de ahí sigues con precio → duración → instalación.
+- **Cotizar por Precio** (nueva): si no sabes o no quieres teclear el nombre exacto del artículo, escribes directo el precio y la app te pide, en orden: Subcategoría → Duración → Instalación (si aplica). Ambas comparten la misma tarjeta de Resultado con SKU y código de barras.
+- Arriba a la derecha hay un ícono ← "Regresar" que te devuelve un paso a la vez dentro del flujo que estés usando (de Resultado a Duración, de Duración a Subcategoría, de Subcategoría a Precio).
+- En "Cotizar por Precio", la instalación se ofrece si la subcategoría elegida tiene artículos elegibles para instalación (Línea Blanca y Electrónica y Cómputo); como no se conoce el artículo exacto, queda a criterio del vendedor confirmarlo con el cliente.
+
 ## Cómo funciona el cálculo
 
 - Todas las Garantías Extendidas se cobran como **precio de venta del artículo × porcentaje**, sin redondeo (se muestra el monto exacto con centavos), tal como está en el Excel origen.

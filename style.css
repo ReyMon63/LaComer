@@ -246,6 +246,38 @@ body {
 .result-item .name { font-weight: 600; font-size: 14px; }
 .result-item .cat { font-size: 11px; color: var(--ink-soft); }
 
+.subcat-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.subcat-grid[hidden] { display: none; }
+
+.subcat-item {
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: #fbfcfb;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.subcat-item:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+.subcat-item.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px rgba(15, 122, 83, 0.15);
+}
+
+.subcat-item .name { font-weight: 700; font-size: 14px; }
+.subcat-item .opts { font-size: 11px; color: var(--ink-soft); }
+
 .empty-msg {
   margin-top: 10px;
   font-size: 13px;

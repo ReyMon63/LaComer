@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>Preciador GE · La Comer</title>
 <link rel="stylesheet" href="style.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -48,6 +48,7 @@
       </div>
     </div>
     <div class="topbar-actions">
+      <button id="backBtn" class="icon-btn" title="Regresar" hidden>←</button>
       <button id="shareBtn" class="icon-btn" title="Compartir app (QR)">⛶</button>
       <button id="logoutBtn" class="icon-btn" title="Cerrar sesión">⎋</button>
     </div>
@@ -55,9 +56,9 @@
 
   <main class="content">
 
-    <!-- Buscador dinámico -->
-    <div class="card search-card">
-      <label for="searchInput">Busca el artículo</label>
+    <!-- OPCIÓN 1: Cotizar por Artículo -->
+    <div id="searchCard" class="card search-card">
+      <label for="searchInput">Cotizar por Artículo</label>
       <input
         id="searchInput"
         type="text"
@@ -69,7 +70,45 @@
       <p id="searchEmpty" class="empty-msg" hidden>No encontramos ese artículo en el catálogo de GE — probablemente no es elegible.</p>
     </div>
 
-    <!-- Artículo seleccionado -->
+    <!-- OPCIÓN 2: Cotizar por Precio -->
+    <div id="priceModeCard" class="card price-mode-card">
+      <label for="priceModeInput">Cotizar por Precio</label>
+      <div class="price-field">
+        <span class="price-prefix">$</span>
+        <input
+          id="priceModeInput"
+          type="text"
+          inputmode="decimal"
+          placeholder="0.00"
+          autocomplete="off"
+        >
+      </div>
+      <p id="priceModeLimitMsg" class="empty-msg" hidden>
+        <strong>Artículo NO Elegible.</strong> El valor máximo para un artículo es de $15,000.00.
+      </p>
+    </div>
+
+    <!-- Flujo B: Subcategoría → Duración → Instalación -->
+    <div id="flowBWrap" class="card flowb-card" hidden>
+      <div id="subcatStep">
+        <p class="section-label">Selecciona la subcategoría</p>
+        <div id="subcatGrid" class="subcat-grid"></div>
+      </div>
+
+      <div id="durStepB" class="options-wrap" hidden>
+        <p class="section-label">Elige la opción</p>
+        <div id="optionsGridB" class="options-grid"></div>
+      </div>
+
+      <div id="installWrapB" class="install-wrap" hidden>
+        <label class="install-toggle">
+          <input type="checkbox" id="installCheckB">
+          <span>Agregar instalación (+ $990.00)</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Artículo seleccionado (Flujo A) -->
     <div id="selectedWrap" class="card selected-card" hidden>
       <div class="selected-row">
         <div>
